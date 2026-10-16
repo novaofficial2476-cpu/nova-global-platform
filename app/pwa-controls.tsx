@@ -24,6 +24,13 @@ export default function PwaControls() {
     if(window.matchMedia("(display-mode: standalone)").matches)setInstalled(true);
     return ()=>{window.removeEventListener("beforeinstallprompt",beforeInstall);window.removeEventListener("appinstalled",appInstalled);};
   },[]);
+  async function sendTestPush(){
+    const db=getSupabase();if(!db){setNotice("NOVA database is not configured.");return;}
+    const {data:{session}}=await db.auth.getSession();if(!session){setNotice("Sign in to test push delivery.");return;}
+    setPushBusy(true);
+    try{const response=await fetch("/api/push/test",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token}});const result=await response.json().catch(()=>({}));setNotice(response.ok?result.message??"Push test sent.":result.error??"Push test failed.");}
+    catch{setNotice("Push test failed due to a network error.");}finally{setPushBusy(false);}
+  }
   async function install(){
     if(!installEvent){setNotice("If install is not offered here, open your browser menu and choose Add to Home screen.");return;}
     await installEvent.prompt();const choice=await installEvent.userChoice;
@@ -51,5 +58,5 @@ export default function PwaControls() {
       setNotice(error instanceof Error?error.message:"Could not enable push notifications.");
     } finally {setPushBusy(false);}
   }
-  return <div className="pwa-controls" aria-label="Install and notification controls">{!installed&&<button onClick={()=>void install()}>{installEvent?"Install NOVA":"Add NOVA to Home screen"}</button>}<button onClick={()=>void enableNotifications()} disabled={pushBusy}>{pushBusy?"Enabling…":"Enable notifications"}</button>{notice&&<span role="status">{notice}</span>}</div>;
+  return <div className="pwa-controls" aria-label="Install and notification controls">{!installed&&<button onClick={()=>void install()}>{installEvent?"Install NOVA":"Add NOVA to Home screen"}</button>}<button onClick={()=>void enableNotifications()} disabled={pushBusy}>{pushBusy?"Enabling…":"Enable notifications"}</button><button onClick={()=>void sendTestPush()} disabled={pushBusy}>Send test push</button>{notice&&<span role="status">{notice}</span>}</div>;
 }
