@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell, Bookmark, Compass, Film, Heart, Home, ImagePlus, MessageCircle,
   MoreHorizontal, Plus, Search, Send, Settings2, Sparkles, Users, Video,
@@ -16,6 +16,8 @@ type Post = {
   author_id: string;
   body: string;
   created_at: string;
+  media_url: string | null;
+  media_type: "image" | "video" | null;
   profiles: { display_name: string; username: string | null } | { display_name: string; username: string | null }[] | null;
 };
 const nav = [
@@ -28,6 +30,11 @@ export default function HomePage() {
   const [active, setActive] = useState("Home");
   const [query, setQuery] = useState("");
   const [composer, setComposer] = useState("");
+  const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState("");
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
+  const [mediaPickerType, setMediaPickerType] = useState<"image" | "video">("image");
   const [posts, setPosts] = useState<Post[]>([]);
   const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
@@ -97,7 +104,7 @@ export default function HomePage() {
     setLoadingPosts(true);
     const { data, error } = await supabase
       .from("posts")
-      .select("id, author_id, body, created_at, profiles!posts_author_id_fkey(display_name, username)")
+      .select("id, author_id, body, created_at, media_url, media_type, profiles!posts_author_id_fkey(display_name, username)")
       .eq("visibility", "public")
       .order("created_at", { ascending: false })
       .limit(50);
@@ -116,15 +123,23 @@ export default function HomePage() {
         setCommentsByPost(grouped);
       } else setCommentsByPost({});
     }
+    if (user) {
+      const { data: follows } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).eq("status", "accepted");
+      setFollowingIds((follows ?? []).map(item => item.following_id));
+    }
     setLoadingPosts(false);
   }
 
-  useEffect(() => { void loadPosts(); }, [supabase]);
+  useEffect(() => { void loadPosts(); }, [supabase, user?.id]);
 
   const visiblePosts = useMemo(() => posts.filter(p => {
     const profile = Array.isArray(p.profiles) ? p.profiles[0] : p.profiles;
-    return (p.body + (profile?.display_name ?? "") + (profile?.username ?? "")).toLowerCase().includes(query.toLowerCase());
-  }), [posts, query]);
+    const matchesSearch = (p.body + (profile?.display_name ?? "") + (profile?.username ?? "")).toLowerCase().includes(query.toLowerCase());
+    if (!matchesSearch) return false;
+    if (active === "Shorts") return p.media_type === "video" && Boolean(p.media_url);
+    if (active === "Following") return followingIds.includes(p.author_id);
+    return true;
+  }), [posts, query, active, followingIds]);
 
   async function handleAuth(event: FormEvent) {
     event.preventDefault();
@@ -144,13 +159,41 @@ export default function HomePage() {
     setPassword("");
   }
 
+  function chooseMedia(kind: "image" | "video") {
+    if (!user) { setAuthOpen(true); setNotice("Sign in before uploading media."); return; }
+    setMediaPickerType(kind);
+    if (mediaInputRef.current) { mediaInputRef.current.accept = kind === "image" ? "image/jpeg,image/png,image/webp,image/gif" : "video/mp4,video/webm,video/quicktime"; mediaInputRef.current.click(); }
+  }
+
+  function onMediaSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const expected = mediaPickerType === "image" ? file.type.startsWith("image/") : file.type.startsWith("video/");
+    if (!expected) { setNotice("Choose a supported " + mediaPickerType + " file."); event.target.value = ""; return; }
+    if (file.size > 100 * 1024 * 1024) { setNotice("Media must be 100 MB or smaller."); event.target.value = ""; return; }
+    setSelectedMedia(file); setMediaPreview(URL.createObjectURL(file)); setNotice("Media selected. Share your post when ready.");
+  }
+
   async function publishPost() {
-    if (!composer.trim()) { setNotice("Write a thought before sharing."); return; }
-    if (!supabase) { setNotice("Connect the Supabase environment variables first to save posts."); return; }
+    if (!composer.trim() && !selectedMedia) { setNotice("Write a thought or attach a photo/video before sharing."); return; }
+    if (!supabase) { setNotice("Database connection is missing; media cannot be published."); return; }
     if (!user) { setAuthOpen(true); setNotice("Sign in to publish a post that is saved to your account."); return; }
-    const { error } = await supabase.from("posts").insert({ author_id: user.id, body: composer.trim(), visibility: "public" });
-    if (error) { setNotice(error.message); return; }
-    setComposer(""); setNotice("Your post is published."); await loadPosts();
+    setUploadingMedia(true); setNotice("");
+    let media_url: string | null = null;
+    let media_type: "image" | "video" | null = null;
+    if (selectedMedia) {
+      media_type = selectedMedia.type.startsWith("video/") ? "video" : "image";
+      const safeName = selectedMedia.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+      const path = user.id + "/" + Date.now() + "-" + safeName;
+      const { error: uploadError } = await supabase.storage.from("nova-media").upload(path, selectedMedia, { contentType: selectedMedia.type, upsert: false });
+      if (uploadError) { setUploadingMedia(false); setNotice("Upload failed: " + uploadError.message); return; }
+      media_url = supabase.storage.from("nova-media").getPublicUrl(path).data.publicUrl;
+    }
+    const { error } = await supabase.from("posts").insert({ author_id: user.id, body: composer.trim(), media_url, media_type, visibility: "public" });
+    setUploadingMedia(false);
+    if (error) { setNotice("Media uploaded but the post could not be saved: " + error.message); return; }
+    setComposer(""); setSelectedMedia(null); setMediaPreview(""); if (mediaInputRef.current) mediaInputRef.current.value = "";
+    setActive(media_type === "video" ? "Shorts" : "Home"); setNotice("Published to NOVA."); await loadPosts();
   }
 
   async function submitComment(postId: string) {
@@ -193,7 +236,7 @@ export default function HomePage() {
       <div className="layout">
         <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
           <div className="side-label">YOUR SPACE</div>
-          {nav.map(item => <button key={item.label} className={`nav-item ${active === item.label ? "nav-active" : ""}`} onClick={() => { setActive(item.label); setMobileMenu(false); if (item.label === "Explore") void loadMembers(); else if (item.label !== "Home") setNotice(item.label + " is planned for a later build phase."); }}><item.icon size={19}/><span>{item.label}</span></button>)}
+          {nav.map(item => <button key={item.label} className={`nav-item ${active === item.label ? "nav-active" : ""}`} onClick={() => { setActive(item.label); setMobileMenu(false); if (item.label === "Explore") void loadMembers(); else if (item.label === "Shorts") { setNotice(""); void loadPosts(); } else if (item.label === "Home") void loadPosts(); else if (item.label !== "Following") setNotice(item.label + " is not active yet."); }}><item.icon size={19}/><span>{item.label}</span></button>)}
           <div className="side-divider"/>
           <div className="side-label">YOUR COMMUNITIES <button aria-label="Add community" onClick={() => setNotice("Community creation is planned for a later phase.")}><Plus size={15}/></button></div>
           <button className="community-item" onClick={() => setNotice("Community pages are not connected yet.")}><span className="community-icon purple">✳</span> Design & ideas</button>
@@ -205,14 +248,14 @@ export default function HomePage() {
         <section className="feed-column">
           <div className="welcome"><div><div className="eyebrow"><Sparkles size={13}/> A NEW KIND OF SOCIAL</div><h1>Make room for <span>you.</span></h1><p>Good things happen when we find our people.</p></div><div className="welcome-orb"><Globe2 size={38}/><span/></div></div>
           {active === "Explore" && <section className="explore-panel card"><div className="section-heading"><div><span className="live-dot"/> DISCOVER MEMBERS</div><button className="icon-button subtle" aria-label="Refresh members" onClick={() => void loadMembers()}><Settings2 size={17}/></button></div>{loadingMembers ? <p>Loading members…</p> : members.length === 0 ? <p>No public member profiles to show yet.</p> : members.map(member => <div className="member-row" key={member.id}><div className="avatar">{member.display_name.slice(0,1).toUpperCase()}</div><div className="member-info"><strong>{member.display_name}</strong><span>{member.username ? "@"+member.username : "NOVA member"}</span>{member.bio && <small>{member.bio}</small>}</div><button className="outline-button follow-button" onClick={() => void toggleFollow(member.id)}>{followingIds.includes(member.id) ? "Following" : "Follow"}</button></div>)}</section>}
-          <div className="feed-tabs"><button className="tab-selected" onClick={() => {setActive("Home");void loadPosts();}}>Latest <span/></button><button onClick={() => setNotice("Following feed will be added with follow relationships.")}>Following</button><button onClick={() => {setQuery("");void loadPosts();}}>All posts</button></div>
+          <div className="feed-tabs"><button className={active === "Home" ? "tab-selected" : ""} onClick={() => {setActive("Home");void loadPosts();}}>Latest <span/></button><button className={active === "Following" ? "tab-selected" : ""} onClick={() => {setActive("Following");void loadPosts();}}>Following</button><button className={active === "Shorts" ? "tab-selected" : ""} onClick={() => {setActive("Shorts");void loadPosts();}}>Shorts</button></div>
           <section className="composer card">
             <div className="avatar composer-avatar">{(displayName || user?.email)?.slice(0,1).toUpperCase() ?? "N"}</div>
-            <div className="composer-main"><textarea value={composer} onChange={e => setComposer(e.target.value)} placeholder={user ? "What’s on your mind?" : "Sign in to share with NOVA…"} rows={2} aria-label="Write a post"/><div className="composer-actions"><div className="composer-tools"><button aria-label="Add image" onClick={() => setNotice("Image uploads will be enabled after storage is configured.")}><ImagePlus size={18}/></button><button aria-label="Add video" onClick={() => setNotice("Video uploads are planned for a later phase.")}><Video size={18}/></button><span className="privacy-note"><Globe2 size={13}/> Public</span></div><button className="share-button" onClick={publishPost}><Send size={15}/> Share</button></div></div>
+            <div className="composer-main"><textarea value={composer} onChange={e => setComposer(e.target.value)} placeholder={user ? "What’s on your mind?" : "Sign in to share with NOVA…"} rows={2} aria-label="Write a post"/><div className="composer-actions"><div className="composer-tools"><button aria-label="Add image" onClick={() => chooseMedia("image")}><ImagePlus size={18}/></button><button aria-label="Add video or Short" onClick={() => chooseMedia("video")}><Video size={18}/></button><span className="privacy-note"><Globe2 size={13}/> Public</span></div><button className="share-button" onClick={publishPost} disabled={uploadingMedia}><Send size={15}/> {uploadingMedia ? "Uploading…" : "Share"}</button></div>{mediaPreview && <div className="media-preview">{selectedMedia?.type.startsWith("video/") ? <video src={mediaPreview} controls playsInline /> : <img src={mediaPreview} alt="Selected upload preview" />}<button type="button" className="outline-button" onClick={() => {setSelectedMedia(null);setMediaPreview("");if(mediaInputRef.current)mediaInputRef.current.value="";}}>Remove media</button></div>}<input ref={mediaInputRef} className="hidden-media-input" type="file" onChange={onMediaSelected} aria-label="Choose media file" /></div>
           </section>
           {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice("")}><X size={15}/></button></div>}
           {!supabase && <div className="notice" role="status"><span>Database connection needs setup: add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel.</span></div>}
-          <div className="section-heading"><div><span className="live-dot"/> YOUR FEED <span className="muted-label">/ REAL COMMUNITY POSTS</span></div><button className="icon-button subtle" aria-label="Refresh feed" onClick={() => void loadPosts()}><Settings2 size={17}/></button></div>
+          <div className="section-heading"><div><span className="live-dot"/> {active === "Shorts" ? "NOVA SHORTS" : active === "Following" ? "FOLLOWING FEED" : "YOUR FEED"} <span className="muted-label">/ LIVE DATABASE POSTS</span></div><button className="icon-button subtle" aria-label="Refresh feed" onClick={() => void loadPosts()}><Settings2 size={17}/></button></div>
           <div className="posts">
             {loadingPosts && <div className="empty-state card"><strong>Loading NOVA feed…</strong></div>}
             {!loadingPosts && visiblePosts.map(post => {
@@ -223,7 +266,9 @@ export default function HomePage() {
               return <article className="post card" key={post.id}>
                 <div className="post-header"><div className="post-avatar avatar-art nova"><Sparkles size={20}/></div><div className="post-author"><strong>{name}</strong><span>{handle} · {time}</span></div><button className="icon-button subtle more" aria-label="Post options" onClick={() => setNotice("Post reporting and moderation tools are planned for a later phase.")}><MoreHorizontal size={20}/></button></div>
                 <p className="post-text">{post.body}</p>
-                <div className="post-meta"><span>Saved in NOVA</span><span>Replies coming later</span></div>
+                {post.media_url && post.media_type === "image" && <img className="post-media" src={post.media_url} alt="Photo shared on NOVA" loading="lazy" />}
+                {post.media_url && post.media_type === "video" && <video className={active === "Shorts" ? "post-media short-video" : "post-media"} src={post.media_url} controls playsInline preload="metadata" />}
+                <div className="post-meta"><span>{post.media_type === "video" ? "NOVA Short" : post.media_type === "image" ? "Photo post" : "Text post"}</span><span>{commentsByPost[post.id]?.length ?? 0} replies</span></div>
                 <div className="post-actions"><button onClick={() => void toggleLike(post.id)}><Heart size={18}/><span>Appreciate</span></button><button onClick={() => setOpenComments(current => current.includes(post.id) ? current.filter(id => id !== post.id) : [...current, post.id])}><MessageCircle size={18}/><span>Reply ({commentsByPost[post.id]?.length ?? 0})</span></button><button onClick={() => {void navigator.clipboard?.writeText(window.location.origin);setNotice("NOVA link copied if your browser permits clipboard access.");}}><Send size={17}/><span>Share</span></button></div>
                 {openComments.includes(post.id) && <div className="comments-panel">
                   {(commentsByPost[post.id] ?? []).map(comment => { const cp = Array.isArray(comment.profiles) ? comment.profiles[0] : comment.profiles; return <div className="comment-row" key={comment.id}><strong>{cp?.display_name || "NOVA member"}</strong><span>{comment.body}</span></div>; })}
@@ -236,7 +281,7 @@ export default function HomePage() {
           <footer className="footer-note">NOVA is growing step by step <span>·</span> Made for connection, not noise.</footer>
         </section>
         <aside className="rightbar">
-          <section className="side-card trend-card"><div className="right-title">DISCOVER NOVA <Sparkles size={15}/></div><button className="trend" onClick={() => setNotice("Creator discovery will be added in a later phase.")}><span className="trend-number">01</span><span><strong>Find your people</strong><small>Communities and creators</small></span><span className="trend-arrow">↗</span></button><button className="trend" onClick={() => setNotice("Short video feed is planned for a later phase.")}><span className="trend-number">02</span><span><strong>Watch Shorts</strong><small>Short-form videos</small></span><span className="trend-arrow">↗</span></button><button className="trend" onClick={() => setNotice("Messaging is planned for a later phase.")}><span className="trend-number">03</span><span><strong>Start a conversation</strong><small>Private messages</small></span><span className="trend-arrow">↗</span></button><button className="text-link" onClick={() => setNotice("Explore is still being built.")}>Explore NOVA ↗</button></section>
+          <section className="side-card trend-card"><div className="right-title">DISCOVER NOVA <Sparkles size={15}/></div><button className="trend" onClick={() => setNotice("Creator discovery will be added in a later phase.")}><span className="trend-number">01</span><span><strong>Find your people</strong><small>Communities and creators</small></span><span className="trend-arrow">↗</span></button><button className="trend" onClick={() => {setActive("Shorts");void loadPosts();}}><span className="trend-number">02</span><span><strong>Watch Shorts</strong><small>Short-form videos</small></span><span className="trend-arrow">↗</span></button><button className="trend" onClick={() => setNotice("Messaging is planned for a later phase.")}><span className="trend-number">03</span><span><strong>Start a conversation</strong><small>Private messages</small></span><span className="trend-arrow">↗</span></button><button className="text-link" onClick={() => setNotice("Explore is still being built.")}>Explore NOVA ↗</button></section>
           <section className="side-card invite-card"><div className="invite-icon"><Users size={20}/></div><div className="right-title">BETTER TOGETHER</div><h3>Your people are out there.</h3><p>Build a corner of the internet that feels like yours.</p><button className="outline-button" onClick={() => {setAuthMode("signup");setAuthOpen(true);}}>Join NOVA <Plus size={15}/></button></section>
           <div className="right-links"><a href="#about">About NOVA</a><a href="#privacy">Privacy</a><a href="#guidelines">Community guidelines</a><span>© 2026 NOVA</span></div>
         </aside>
