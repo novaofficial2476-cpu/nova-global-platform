@@ -46,7 +46,7 @@ async function compressImageForUpload(file: File): Promise<File> {
 async function uploadWithRetry(storage: ReturnType<NonNullable<ReturnType<typeof getSupabase>>["storage"]["from"]>, path: string, file: File) {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const result = await storage.upload(path, file, { contentType: file.type, upsert: false });
+    const result = await storage.upload(path, file, { contentType: file.type, upsert: false, cacheControl: "31536000" });
     if (!result.error) return { error: null };
     lastError = result.error;
     if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
