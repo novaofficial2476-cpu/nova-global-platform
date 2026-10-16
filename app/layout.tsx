@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import PwaRegister from "./pwa-register";
+import PwaControls from "./pwa-controls";
 
 export const metadata: Metadata = {
   title: "NOVA — One World. Your World.",
@@ -20,7 +21,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body><PwaRegister />{children}</body>
+      <body><PwaRegister /><PwaControls />{children}</body>
     </html>
   );
 }
