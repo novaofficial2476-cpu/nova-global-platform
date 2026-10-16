@@ -30,3 +30,13 @@
 .comment-form{display:flex;gap:8px;margin-top:4px}
 .comment-form input{min-width:0;flex:1;border:1px solid var(--border,#dce1eb);border-radius:10px;padding:10px 12px;background:var(--surface,#fff);color:inherit;font:inherit;font-size:13px}
 .comment-form .share-button{flex-shrink:0;padding:0 14px}
+
+/* Member discovery */
+.explore-panel{padding:18px;margin:0 0 18px}
+.member-row{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line)}
+.member-row:last-child{border-bottom:0}
+.member-info{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}
+.member-info strong{font-size:14px}
+.member-info span,.member-info small{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.member-info small{max-width:100%;white-space:normal}
+.follow-button{padding:8px 13px;white-space:nowrap}
