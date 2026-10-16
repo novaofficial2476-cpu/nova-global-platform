@@ -21,3 +21,12 @@
 .auth-submit:disabled{opacity:.65;cursor:wait}
 .auth-switch{display:block;width:100%;border:0;background:transparent;color:#6966e8;font-size:13px;font-weight:650;margin-top:17px;padding:8px;cursor:pointer}
 @media(max-width:480px){.auth-card{padding:25px 20px}.auth-backdrop{padding:12px}}
+
+/* Persistent post replies */
+.comments-panel{border-top:1px solid var(--border,#e7eaf1);padding:14px 18px 16px;display:flex;flex-direction:column;gap:10px}
+.comment-row{display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:10px;background:var(--surface,#f7f8fc);font-size:13px;overflow-wrap:anywhere}
+.comment-row strong{font-size:12px;color:var(--text,#20263a)}
+.comment-row span{color:var(--muted,#687187);white-space:pre-wrap}
+.comment-form{display:flex;gap:8px;margin-top:4px}
+.comment-form input{min-width:0;flex:1;border:1px solid var(--border,#dce1eb);border-radius:10px;padding:10px 12px;background:var(--surface,#fff);color:inherit;font:inherit;font-size:13px}
+.comment-form .share-button{flex-shrink:0;padding:0 14px}
