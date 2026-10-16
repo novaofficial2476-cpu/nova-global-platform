@@ -9,6 +9,7 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { getSupabase } from "../lib/supabase";
 
+type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string; profiles: { display_name: string; username: string | null } | { display_name: string; username: string | null }[] | null };
 type Post = {
   id: string;
   author_id: string;
@@ -26,7 +27,7 @@ export default function HomePage() {
   const [active, setActive] = useState("Home");
   const [query, setQuery] = useState("");
   const [composer, setComposer] = useState("");
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);\n  const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});\n  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});\n  const [openComments, setOpenComments] = useState<string[]>([]);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -92,7 +93,7 @@ export default function HomePage() {
     setComposer(""); setNotice("Your post is published."); await loadPosts();
   }
 
-  async function toggleLike(postId: string) {
+  async function submitComment(postId: string) {\n    const body = (commentDrafts[postId] ?? "").trim();\n    if (!body) return;\n    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to reply to a post."); return; }\n    const { error } = await supabase.from("comments").insert({ post_id: postId, author_id: user.id, body });\n    if (error) { setNotice(error.message); return; }\n    setCommentDrafts(current => ({ ...current, [postId]: "" }));\n    await loadPosts();\n    setOpenComments(current => current.includes(postId) ? current : [...current, postId]);\n  }\n\n  async function toggleLike(postId: string) {
     if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to appreciate posts."); return; }
     const { data: existing, error: readError } = await supabase.from("post_likes").select("post_id").eq("post_id", postId).eq("user_id", user.id).maybeSingle();
     if (readError) { setNotice(readError.message); return; }
@@ -151,7 +152,7 @@ export default function HomePage() {
                 <div className="post-header"><div className="post-avatar avatar-art nova"><Sparkles size={20}/></div><div className="post-author"><strong>{name}</strong><span>{handle} · {time}</span></div><button className="icon-button subtle more" aria-label="Post options" onClick={() => setNotice("Post reporting and moderation tools are planned for a later phase.")}><MoreHorizontal size={20}/></button></div>
                 <p className="post-text">{post.body}</p>
                 <div className="post-meta"><span>Saved in NOVA</span><span>Replies coming later</span></div>
-                <div className="post-actions"><button onClick={() => void toggleLike(post.id)}><Heart size={18}/><span>Appreciate</span></button><button onClick={() => setNotice("Comments are not yet connected to this page.")}><MessageCircle size={18}/><span>Reply</span></button><button onClick={() => {void navigator.clipboard?.writeText(window.location.origin);setNotice("NOVA link copied if your browser permits clipboard access.");}}><Send size={17}/><span>Share</span></button></div>
+                <div className="post-actions"><button onClick={() => void toggleLike(post.id)}><Heart size={18}/><span>Appreciate</span></button><button onClick={() => setOpenComments(current => current.includes(post.id) ? current.filter(id => id !== post.id) : [...current, post.id])}><MessageCircle size={18}/><span>Reply ({commentsByPost[post.id]?.length ?? 0})</span></button><button onClick={() => {void navigator.clipboard?.writeText(window.location.origin);setNotice("NOVA link copied if your browser permits clipboard access.");}}><Send size={17}/><span>Share</span></button></div>
               </article>;
             })}
             {!loadingPosts && visiblePosts.length === 0 && <div className="empty-state card"><Search size={24}/><strong>{query ? "No posts found" : "Your feed is ready for its first post"}</strong><span>{query ? "Try another search." : "Sign in and share something with the NOVA community."}</span></div>}
