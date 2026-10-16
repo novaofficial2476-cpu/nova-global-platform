@@ -12,7 +12,8 @@
     "next": "15.5.18",
     "react": "19.1.7",
     "react-dom": "19.1.7",
-    "lucide-react": "^0.468.0"
+    "lucide-react": "^0.468.0",
+    "@supabase/supabase-js": "^2.57.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
