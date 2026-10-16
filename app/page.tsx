@@ -59,6 +59,14 @@ export default function HomePage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [loadingPosts, setLoadingPosts] = useState(true);
+  const [conversations, setConversations] = useState<Array<{id:string; title:string|null; is_group:boolean; created_at:string}>>([]);
+  const [messagesByConversation, setMessagesByConversation] = useState<Record<string, Array<{id:string; sender_id:string; body:string; created_at:string}>>>({});
+  const [activeConversation, setActiveConversation] = useState("");
+  const [messageDraft, setMessageDraft] = useState("");
+  const [newChatUser, setNewChatUser] = useState("");
+  const [communityName, setCommunityName] = useState("");
+  const [communityDescription, setCommunityDescription] = useState("");
+  const [communities, setCommunities] = useState<Array<{id:string; name:string; slug:string; description:string; owner_id:string}>>([]);
 
   useEffect(() => {
     if (!supabase) { setLoadingPosts(false); return; }
@@ -74,6 +82,75 @@ export default function HomePage() {
     if (error) setNotice(error.message); else setMembers((data ?? []).filter(member => member.id !== user?.id) as Member[]);
     if (user) { const { data: follows } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).eq("status", "accepted"); setFollowingIds((follows ?? []).map(item => item.following_id)); }
     setLoadingMembers(false);
+  }
+
+  async function loadConversations() {
+    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to use NOVA Messages."); return; }
+    const { data: memberships, error } = await supabase.from("conversation_members").select("conversation_id").eq("user_id", user.id);
+    if (error) { setNotice("Messages could not load: " + error.message); return; }
+    const ids = (memberships ?? []).map(row => row.conversation_id);
+    if (!ids.length) { setConversations([]); setActiveConversation(""); setMessagesByConversation({}); return; }
+    const { data: chats, error: chatError } = await supabase.from("conversations").select("id,title,is_group,created_at").in("id", ids).order("created_at", {ascending:false});
+    if (chatError) { setNotice("Conversations could not load: " + chatError.message); return; }
+    setConversations(chats ?? []);
+    if (!activeConversation || !ids.includes(activeConversation)) setActiveConversation(ids[0]);
+    const { data: msgs, error: msgError } = await supabase.from("messages").select("id,conversation_id,sender_id,body,created_at").in("conversation_id", ids).order("created_at", {ascending:true}).limit(300);
+    if (msgError) { setNotice("Messages could not load: " + msgError.message); return; }
+    const grouped: Record<string, Array<{id:string;sender_id:string;body:string;created_at:string}>> = {};
+    for (const m of msgs ?? []) (grouped[m.conversation_id] ??= []).push(m);
+    setMessagesByConversation(grouped);
+  }
+
+  async function startConversation(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !user) { setAuthOpen(true); return; }
+    const target = members.find(m => m.username?.toLowerCase() === newChatUser.trim().replace(/^@/, "").toLowerCase());
+    if (!target) { await loadMembers(); setNotice("Find the recipient in Explore first, then enter their exact username."); return; }
+    if (target.id === user.id) { setNotice("You cannot start a chat with yourself."); return; }
+    const { data: memberships, error: memberError } = await supabase.from("conversation_members").select("conversation_id").eq("user_id", user.id);
+    if (memberError) { setNotice(memberError.message); return; }
+    for (const row of memberships ?? []) {
+      const { data: other } = await supabase.from("conversation_members").select("user_id").eq("conversation_id", row.conversation_id).eq("user_id", target.id).maybeSingle();
+      if (other) { setActiveConversation(row.conversation_id); setNotice("Opened existing conversation."); await loadConversations(); return; }
+    }
+    const { data: chat, error } = await supabase.from("conversations").insert({created_by:user.id,is_group:false,title:null}).select("id").single();
+    if (error || !chat) { setNotice("Could not create conversation: " + (error?.message ?? "Unknown error")); return; }
+    const { error: addError } = await supabase.from("conversation_members").insert([{conversation_id:chat.id,user_id:user.id},{conversation_id:chat.id,user_id:target.id}]);
+    if (addError) { setNotice("Conversation was created but adding participants failed: " + addError.message); return; }
+    setNewChatUser(""); setActiveConversation(chat.id); await loadConversations(); setNotice("Conversation created.");
+  }
+
+  async function sendMessage(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !user || !activeConversation || !messageDraft.trim()) return;
+    const { error } = await supabase.from("messages").insert({conversation_id:activeConversation,sender_id:user.id,body:messageDraft.trim()});
+    if (error) { setNotice("Message not sent: " + error.message); return; }
+    setMessageDraft(""); await loadConversations();
+  }
+
+  async function loadCommunities() {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("communities").select("id,name,slug,description,owner_id").eq("is_private",false).order("created_at",{ascending:false}).limit(50);
+    if (error) setNotice("Groups could not load: " + error.message); else setCommunities(data ?? []);
+  }
+
+  async function createCommunity(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !user) { setAuthOpen(true); return; }
+    const name=communityName.trim();
+    if(name.length<3){setNotice("Group name must have at least 3 characters.");return;}
+    const slug=name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")+"-"+user.id.slice(0,6);
+    const {data:community,error}=await supabase.from("communities").insert({name,slug,description:communityDescription.trim(),owner_id:user.id,is_private:false}).select("id").single();
+    if(error||!community){setNotice("Group creation failed: "+(error?.message??"Unknown error"));return;}
+    const {error:joinError}=await supabase.from("community_members").insert({community_id:community.id,user_id:user.id,role:"owner"});
+    if(joinError){setNotice("Group created but owner membership failed: "+joinError.message);return;}
+    setCommunityName("");setCommunityDescription("");await loadCommunities();setNotice("Your public group is created.");
+  }
+
+  async function joinCommunity(communityId:string) {
+    if(!supabase||!user){setAuthOpen(true);return;}
+    const {error}=await supabase.from("community_members").insert({community_id:communityId,user_id:user.id,role:"member"});
+    setNotice(error ? "Could not join group: "+error.message : "You joined the group.");
   }
 
   async function toggleFollow(memberId: string) {
@@ -255,7 +332,7 @@ export default function HomePage() {
       <div className="layout">
         <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
           <div className="side-label">YOUR SPACE</div>
-          {nav.map(item => <button key={item.label} className={`nav-item ${active === item.label ? "nav-active" : ""}`} onClick={() => { setActive(item.label); setMobileMenu(false); if (item.label === "Explore") void loadMembers(); else if (item.label === "Shorts") { setNotice(""); void loadPosts(); } else if (item.label === "Home") void loadPosts(); else if (item.label !== "Following") setNotice(item.label + " is not active yet."); }}><item.icon size={19}/><span>{item.label}</span></button>)}
+          {nav.map(item => <button key={item.label} className={`nav-item ${active === item.label ? "nav-active" : ""}`} onClick={() => { setActive(item.label); setMobileMenu(false); if (item.label === "Explore") void loadMembers(); else if (item.label === "Shorts") { setNotice(""); void loadPosts(); } else if (item.label === "Home" || item.label === "Following") void loadPosts(); else if (item.label === "Messages") void loadConversations(); else if (item.label === "Communities") void loadCommunities(); else if (item.label === "Saved") setNotice("Saved posts are not implemented yet."); }}><item.icon size={19}/><span>{item.label}</span></button>)}
           <div className="side-divider"/>
           <div className="side-label">YOUR COMMUNITIES <button aria-label="Add community" onClick={() => setNotice("Community creation is planned for a later phase.")}><Plus size={15}/></button></div>
           <button className="community-item" onClick={() => setNotice("Community pages are not connected yet.")}><span className="community-icon purple">✳</span> Design & ideas</button>
@@ -266,6 +343,8 @@ export default function HomePage() {
         </aside>
         <section className="feed-column">
           <div className="welcome"><div><div className="eyebrow"><Sparkles size={13}/> A NEW KIND OF SOCIAL</div><h1>Make room for <span>you.</span></h1><p>Good things happen when we find our people.</p></div><div className="welcome-orb"><Globe2 size={38}/><span/></div></div>
+          {active === "Messages" && <section className="explore-panel card"><div className="section-heading"><div><span className="live-dot"/> NOVA MESSAGES</div><button className="icon-button subtle" onClick={() => void loadConversations()} aria-label="Refresh messages"><Settings2 size={17}/></button></div><form className="comment-form" onSubmit={startConversation}><input value={newChatUser} onChange={e=>setNewChatUser(e.target.value)} placeholder="Start chat: exact @username" aria-label="Recipient username"/><button className="share-button" type="submit">New chat</button></form><div className="message-layout"><div className="conversation-list">{conversations.map(chat=><button key={chat.id} className={"conversation-choice "+(activeConversation===chat.id?"conversation-active":"")} onClick={()=>setActiveConversation(chat.id)}>{chat.title || (chat.is_group?"Group conversation":"Private conversation")}<small>{messagesByConversation[chat.id]?.at(-1)?.body || "No messages yet"}</small></button>)}{conversations.length===0&&<p>No conversations yet. Start a chat with an existing NOVA username.</p>}</div><div className="message-thread">{(messagesByConversation[activeConversation]??[]).map(m=><div key={m.id} className={"message-bubble "+(m.sender_id===user?.id?"message-own":"")}>{m.body}<small>{new Date(m.created_at).toLocaleString()}</small></div>)}{activeConversation&&<form className="comment-form" onSubmit={sendMessage}><input value={messageDraft} onChange={e=>setMessageDraft(e.target.value)} placeholder="Write a message…" maxLength={4000} required/><button className="share-button" type="submit">Send</button></form>}</div></div></section>}
+          {active === "Communities" && <section className="explore-panel card"><div className="section-heading"><div><span className="live-dot"/> PUBLIC GROUPS</div><button className="icon-button subtle" onClick={()=>void loadCommunities()} aria-label="Refresh groups"><Settings2 size={17}/></button></div><form className="community-create-form" onSubmit={createCommunity}><input value={communityName} onChange={e=>setCommunityName(e.target.value)} placeholder="New group name" minLength={3} maxLength={80} required/><input value={communityDescription} onChange={e=>setCommunityDescription(e.target.value)} placeholder="Describe your group" maxLength={500}/><button className="share-button" type="submit">Create group</button></form>{communities.map(group=><div className="member-row" key={group.id}><div className="avatar">{group.name.slice(0,1).toUpperCase()}</div><div className="member-info"><strong>{group.name}</strong><small>{group.description}</small></div><button className="outline-button" onClick={()=>void joinCommunity(group.id)}>Join</button></div>)}{communities.length===0&&<p>No public groups yet. Create the first group.</p>}</section>}
           {active === "Explore" && <section className="explore-panel card"><div className="section-heading"><div><span className="live-dot"/> DISCOVER MEMBERS</div><button className="icon-button subtle" aria-label="Refresh members" onClick={() => void loadMembers()}><Settings2 size={17}/></button></div>{loadingMembers ? <p>Loading members…</p> : members.length === 0 ? <p>No public member profiles to show yet.</p> : members.map(member => <div className="member-row" key={member.id}><div className="avatar">{member.display_name.slice(0,1).toUpperCase()}</div><div className="member-info"><strong>{member.display_name}</strong><span>{member.username ? "@"+member.username : "NOVA member"}</span>{member.bio && <small>{member.bio}</small>}</div><button className="outline-button follow-button" onClick={() => void toggleFollow(member.id)}>{followingIds.includes(member.id) ? "Following" : "Follow"}</button></div>)}</section>}
           <div className="feed-tabs"><button className={active === "Home" ? "tab-selected" : ""} onClick={() => {setActive("Home");void loadPosts();}}>Latest <span/></button><button className={active === "Following" ? "tab-selected" : ""} onClick={() => {setActive("Following");void loadPosts();}}>Following</button><button className={active === "Shorts" ? "tab-selected" : ""} onClick={() => {setActive("Shorts");void loadPosts();}}>Shorts</button></div>
           <section className="composer card">
