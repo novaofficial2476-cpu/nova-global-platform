@@ -34,7 +34,12 @@ export default function HomePage() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState("");
   const [user, setUser] = useState<User | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);\n  const [profileOpen, setProfileOpen] = useState(false);\n  const [displayName, setDisplayName] = useState("NOVA User");\n  const [username, setUsername] = useState("");\n  const [bio, setBio] = useState("");\n  const [savingProfile, setSavingProfile] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [displayName, setDisplayName] = useState("NOVA User");
+  const [username, setUsername] = useState("");
+  const [bio, setBio] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,7 +53,24 @@ export default function HomePage() {
     return () => listener.subscription.unsubscribe();
   }, [supabase]);
 
-  async function loadProfile(userId: string) {\n    if (!supabase) return;\n    const { data, error } = await supabase.from("profiles").select("display_name, username, bio").eq("id", userId).maybeSingle();\n    if (!error && data) { setDisplayName(data.display_name || "NOVA User"); setUsername(data.username || ""); setBio(data.bio || ""); }\n  }\n\n  async function saveProfile(event: FormEvent) {\n    event.preventDefault();\n    if (!supabase || !user) return;\n    setSavingProfile(true);\n    const cleanUsername = username.trim().replace(/^@/, "");\n    const { error } = await supabase.from("profiles").update({ display_name: displayName.trim() || "NOVA User", username: cleanUsername || null, bio: bio.trim() }).eq("id", user.id);\n    setSavingProfile(false);\n    if (error) { setNotice(error.message.includes("profiles_username_key") ? "That username is already taken. Choose another." : error.message); return; }\n    setNotice("Profile saved."); setProfileOpen(false);\n  }\n\n  async function loadPosts() {
+  async function loadProfile(userId: string) {
+    if (!supabase) return;
+    const { data, error } = await supabase.from("profiles").select("display_name, username, bio").eq("id", userId).maybeSingle();
+    if (!error && data) { setDisplayName(data.display_name || "NOVA User"); setUsername(data.username || ""); setBio(data.bio || ""); }
+  }
+
+  async function saveProfile(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !user) return;
+    setSavingProfile(true);
+    const cleanUsername = username.trim().replace(/^@/, "");
+    const { error } = await supabase.from("profiles").update({ display_name: displayName.trim() || "NOVA User", username: cleanUsername || null, bio: bio.trim() }).eq("id", user.id);
+    setSavingProfile(false);
+    if (error) { setNotice(error.message.includes("profiles_username_key") ? "That username is already taken. Choose another." : error.message); return; }
+    setNotice("Profile saved."); setProfileOpen(false);
+  }
+
+  async function loadPosts() {
     if (!supabase) { setLoadingPosts(false); return; }
     setLoadingPosts(true);
     const { data, error } = await supabase
@@ -197,7 +219,8 @@ export default function HomePage() {
         </aside>
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">{nav.slice(0,5).map(item => <button key={item.label} className={active === item.label ? "mobile-active" : ""} onClick={() => {setActive(item.label);if(item.label !== "Home")setNotice(item.label + " is planned for a later phase.");}}><item.icon size={20}/><span>{item.label === "Communities" ? "Groups" : item.label}</span></button>)}</nav>
-      {profileOpen && <div className="auth-backdrop" role="presentation" onClick={() => setProfileOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="profile-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setProfileOpen(false)}><X size={18}/></button><h2 id="profile-title">Your profile</h2><p>Update the details other NOVA members see.</p><form onSubmit={saveProfile}><label htmlFor="nova-display-name">Display name</label><input id="nova-display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} required maxLength={80}/><label htmlFor="nova-username">Username</label><input id="nova-username" value={username} onChange={e => setUsername(e.target.value)} placeholder="yourname" pattern="[A-Za-z0-9_.]{3,30}" title="3–30 characters: letters, numbers, underscore or dot" maxLength={30}/><label htmlFor="nova-bio">Bio</label><textarea id="nova-bio" value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={500} placeholder="A little about you"/><button className="share-button auth-submit" type="submit" disabled={savingProfile}>{savingProfile ? "Saving…" : "Save profile"}</button></form><button className="auth-switch" onClick={() => void signOut()}>Sign out of NOVA</button></section></div>}\n      {authOpen && <div className="auth-backdrop" role="presentation" onClick={() => setAuthOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setAuthOpen(false)}><X size={18}/></button><div className="brand auth-brand"><span className="brand-mark">N</span><span>NOVA<span className="brand-dot">.</span></span></div><h2 id="auth-title">{authMode === "signup" ? "Create your account" : "Welcome back"}</h2><p>One account for your NOVA world.</p><form onSubmit={handleAuth}><label htmlFor="nova-email">Email</label><input id="nova-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"/><label htmlFor="nova-password">Password</label><input id="nova-password" type="password" autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters"/><button className="share-button auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"} <LogIn size={16}/></button></form><button className="auth-switch" onClick={() => setAuthMode(authMode === "signup" ? "login" : "signup")}>{authMode === "signup" ? "Already have an account? Sign in" : "New to NOVA? Create an account"}</button></section></div>}
+      {profileOpen && <div className="auth-backdrop" role="presentation" onClick={() => setProfileOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="profile-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setProfileOpen(false)}><X size={18}/></button><h2 id="profile-title">Your profile</h2><p>Update the details other NOVA members see.</p><form onSubmit={saveProfile}><label htmlFor="nova-display-name">Display name</label><input id="nova-display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} required maxLength={80}/><label htmlFor="nova-username">Username</label><input id="nova-username" value={username} onChange={e => setUsername(e.target.value)} placeholder="yourname" pattern="[A-Za-z0-9_.]{3,30}" title="3–30 characters: letters, numbers, underscore or dot" maxLength={30}/><label htmlFor="nova-bio">Bio</label><textarea id="nova-bio" value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={500} placeholder="A little about you"/><button className="share-button auth-submit" type="submit" disabled={savingProfile}>{savingProfile ? "Saving…" : "Save profile"}</button></form><button className="auth-switch" onClick={() => void signOut()}>Sign out of NOVA</button></section></div>}
+      {authOpen && <div className="auth-backdrop" role="presentation" onClick={() => setAuthOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setAuthOpen(false)}><X size={18}/></button><div className="brand auth-brand"><span className="brand-mark">N</span><span>NOVA<span className="brand-dot">.</span></span></div><h2 id="auth-title">{authMode === "signup" ? "Create your account" : "Welcome back"}</h2><p>One account for your NOVA world.</p><form onSubmit={handleAuth}><label htmlFor="nova-email">Email</label><input id="nova-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"/><label htmlFor="nova-password">Password</label><input id="nova-password" type="password" autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters"/><button className="share-button auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"} <LogIn size={16}/></button></form><button className="auth-switch" onClick={() => setAuthMode(authMode === "signup" ? "login" : "signup")}>{authMode === "signup" ? "Already have an account? Sign in" : "New to NOVA? Create an account"}</button></section></div>}
     </main>
   );
 }
