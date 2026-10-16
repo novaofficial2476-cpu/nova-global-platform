@@ -62,3 +62,5 @@
 .admin-report pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f7fb;padding:10px;border-radius:8px}
 .admin-report code{overflow-wrap:anywhere}
 @media(max-width:640px){.legal-page{width:calc(100% - 18px);margin:9px auto 70px;border-radius:14px;padding:18px}.admin-actions button{flex:1}}
+
+.pwa-controls{position:fixed;right:12px;bottom:12px;z-index:40;display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:min(96vw,600px)}.pwa-controls button{border:1px solid #d7d9e5;border-radius:999px;background:#fff;color:#282344;box-shadow:0 4px 18px #1112;padding:8px 12px;font-size:12px;font-weight:650}.pwa-controls span{background:#fff;border:1px solid #d7d9e5;border-radius:10px;padding:8px 10px;font-size:12px;max-width:250px}@media(max-width:640px){.pwa-controls{bottom:76px;right:8px}.pwa-controls button{font-size:11px;padding:7px 10px}}
