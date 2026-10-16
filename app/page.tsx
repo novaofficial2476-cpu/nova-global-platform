@@ -200,8 +200,9 @@ export default function HomePage() {
     setLoadingPosts(true);
     const { data, error } = await supabase
       .from("posts")
-      .select("id, author_id, body, created_at, media_url, media_type, profiles!posts_author_id_fkey(display_name, username)")
+      .select("id, author_id, body, created_at, media_url, media_type, moderation_status, profiles!posts_author_id_fkey(display_name, username)")
       .eq("visibility", "public")
+      .eq("moderation_status", "visible")
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) setNotice("Posts could not be loaded. Check the database policies and site configuration.");
