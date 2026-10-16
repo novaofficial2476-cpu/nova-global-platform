@@ -25,6 +25,35 @@ const nav = [
   { label: "Messages", icon: MessageCircle }, { label: "Communities", icon: Users }, { label: "Saved", icon: Bookmark },
 ];
 
+async function compressImageForUpload(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/gif" || file.size < 700 * 1024) return file;
+  const bitmap = await createImageBitmap(file);
+  const maxDimension = 1920;
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  const context = canvas.getContext("2d");
+  if (!context) { bitmap.close(); return file; }
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/webp", 0.82));
+  if (!blob || blob.size >= file.size) return file;
+  const base = file.name.replace(/\.[^.]+$/, "") || "nova-image";
+  return new File([blob], base + ".webp", { type: "image/webp", lastModified: Date.now() });
+}
+
+async function uploadWithRetry(storage: ReturnType<NonNullable<ReturnType<typeof getSupabase>>["storage"]["from"]>, path: string, file: File) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const result = await storage.upload(path, file, { contentType: file.type, upsert: false });
+    if (!result.error) return { error: null };
+    lastError = result.error;
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+  }
+  return { error: lastError as { message?: string } | null };
+}
+
 export default function HomePage() {
   const supabase = getSupabase();
   const [active, setActive] = useState("Home");
@@ -268,7 +297,7 @@ export default function HomePage() {
     const expected = mediaPickerType === "image" ? file.type.startsWith("image/") : file.type.startsWith("video/");
     if (!expected) { setNotice("Choose a supported " + mediaPickerType + " file."); event.target.value = ""; return; }
     if (file.size > 100 * 1024 * 1024) { setNotice("Media must be 100 MB or smaller."); event.target.value = ""; return; }
-    setSelectedMedia(file); setMediaPreview(URL.createObjectURL(file)); setNotice("Media selected. Share your post when ready.");
+    setSelectedMedia(file); setMediaPreview(URL.createObjectURL(file)); setNotice(file.type.startsWith("image/") && file.size > 700 * 1024 ? "Image selected. It will be compressed before upload where supported." : "Media selected. Share your post when ready.");
   }
 
   async function publishPost() {
@@ -280,10 +309,13 @@ export default function HomePage() {
     let media_type: "image" | "video" | null = null;
     if (selectedMedia) {
       media_type = selectedMedia.type.startsWith("video/") ? "video" : "image";
-      const safeName = selectedMedia.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+      let uploadFile = selectedMedia;
+      try { uploadFile = await compressImageForUpload(selectedMedia); }
+      catch { uploadFile = selectedMedia; }
+      const safeName = uploadFile.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
       const path = user.id + "/" + Date.now() + "-" + safeName;
-      const { error: uploadError } = await supabase.storage.from("nova-media").upload(path, selectedMedia, { contentType: selectedMedia.type, upsert: false });
-      if (uploadError) { setUploadingMedia(false); setNotice("Upload failed: " + uploadError.message); return; }
+      const { error: uploadError } = await uploadWithRetry(supabase.storage.from("nova-media"), path, uploadFile);
+      if (uploadError) { setUploadingMedia(false); setNotice("Upload failed after 3 attempts: " + (uploadError.message ?? "network error") + ". Your selected file is still available; press Share to retry."); return; }
       media_url = supabase.storage.from("nova-media").getPublicUrl(path).data.publicUrl;
     }
     const { error } = await supabase.from("posts").insert({ author_id: user.id, body: composer.trim(), media_url, media_type, visibility: "public" });
