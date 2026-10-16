@@ -50,6 +50,9 @@ export default function HomePage() {
   const [displayName, setDisplayName] = useState("NOVA User");
   const [username, setUsername] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [profileImageBusy, setProfileImageBusy] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("signup");
   const [email, setEmail] = useState("");
@@ -84,8 +87,24 @@ export default function HomePage() {
 
   async function loadProfile(userId: string) {
     if (!supabase) return;
-    const { data, error } = await supabase.from("profiles").select("display_name, username, bio").eq("id", userId).maybeSingle();
-    if (!error && data) { setDisplayName(data.display_name || "NOVA User"); setUsername(data.username || ""); setBio(data.bio || ""); }
+    const { data, error } = await supabase.from("profiles").select("display_name, username, bio, avatar_url, cover_url").eq("id", userId).maybeSingle();
+    if (!error && data) { setDisplayName(data.display_name || "NOVA User"); setUsername(data.username || ""); setBio(data.bio || ""); setAvatarUrl(data.avatar_url || ""); setCoverUrl(data.cover_url || ""); }
+  }
+
+  async function uploadProfileImage(event: React.ChangeEvent<HTMLInputElement>, kind: "avatar" | "cover") {
+    const file = event.target.files?.[0];
+    if (!file || !supabase || !user) return;
+    if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) { setNotice("Profile photos must be an image of 10 MB or less."); event.target.value = ""; return; }
+    setProfileImageBusy(true);
+    const safeName = file.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+    const path = user.id + "/profile-" + kind + "-" + Date.now() + "-" + safeName;
+    const { error } = await supabase.storage.from("nova-media").upload(path, file, { contentType: file.type, upsert: false });
+    setProfileImageBusy(false);
+    if (error) { setNotice("Profile photo upload failed: " + error.message); return; }
+    const url = supabase.storage.from("nova-media").getPublicUrl(path).data.publicUrl;
+    if (kind === "avatar") setAvatarUrl(url); else setCoverUrl(url);
+    setNotice(kind === "avatar" ? "Profile photo uploaded. Save your profile to apply it." : "Cover photo uploaded. Save your profile to apply it.");
+    event.target.value = "";
   }
 
   async function saveProfile(event: FormEvent) {
@@ -93,7 +112,7 @@ export default function HomePage() {
     if (!supabase || !user) return;
     setSavingProfile(true);
     const cleanUsername = username.trim().replace(/^@/, "");
-    const { error } = await supabase.from("profiles").update({ display_name: displayName.trim() || "NOVA User", username: cleanUsername || null, bio: bio.trim() }).eq("id", user.id);
+    const { error } = await supabase.from("profiles").update({ display_name: displayName.trim() || "NOVA User", username: cleanUsername || null, bio: bio.trim(), avatar_url: avatarUrl || null, cover_url: coverUrl || null }).eq("id", user.id);
     setSavingProfile(false);
     if (error) { setNotice(error.message.includes("profiles_username_key") ? "That username is already taken. Choose another." : error.message); return; }
     setNotice("Profile saved."); setProfileOpen(false);
@@ -287,7 +306,7 @@ export default function HomePage() {
         </aside>
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">{nav.slice(0,5).map(item => <button key={item.label} className={active === item.label ? "mobile-active" : ""} onClick={() => {setActive(item.label);if(item.label !== "Home")setNotice(item.label + " is planned for a later phase.");}}><item.icon size={20}/><span>{item.label === "Communities" ? "Groups" : item.label}</span></button>)}</nav>
-      {profileOpen && <div className="auth-backdrop" role="presentation" onClick={() => setProfileOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="profile-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setProfileOpen(false)}><X size={18}/></button><h2 id="profile-title">Your profile</h2><p>Update the details other NOVA members see.</p><form onSubmit={saveProfile}><label htmlFor="nova-display-name">Display name</label><input id="nova-display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} required maxLength={80}/><label htmlFor="nova-username">Username</label><input id="nova-username" value={username} onChange={e => setUsername(e.target.value)} placeholder="yourname" pattern="[A-Za-z0-9_.]{3,30}" title="3–30 characters: letters, numbers, underscore or dot" maxLength={30}/><label htmlFor="nova-bio">Bio</label><textarea id="nova-bio" value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={500} placeholder="A little about you"/><button className="share-button auth-submit" type="submit" disabled={savingProfile}>{savingProfile ? "Saving…" : "Save profile"}</button></form><button className="auth-switch" onClick={() => void signOut()}>Sign out of NOVA</button></section></div>}
+      {profileOpen && <div className="auth-backdrop" role="presentation" onClick={() => setProfileOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="profile-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setProfileOpen(false)}><X size={18}/></button><h2 id="profile-title">Your profile</h2><p>Update the details other NOVA members see.</p><form onSubmit={saveProfile}><label htmlFor="nova-avatar-upload">Profile photo</label>{avatarUrl && <img className="profile-upload-preview" src={avatarUrl} alt="Current profile photo" />}<input id="nova-avatar-upload" className="profile-file-input" type="file" accept="image/*" onChange={event => void uploadProfileImage(event, "avatar")} /><label htmlFor="nova-cover-upload">Cover photo</label>{coverUrl && <img className="cover-upload-preview" src={coverUrl} alt="Current cover photo" />}<input id="nova-cover-upload" className="profile-file-input" type="file" accept="image/*" onChange={event => void uploadProfileImage(event, "cover")} /><label htmlFor="nova-display-name">Display name</label><input id="nova-display-name" value={displayName} onChange={e => setDisplayName(e.target.value)} required maxLength={80}/><label htmlFor="nova-username">Username</label><input id="nova-username" value={username} onChange={e => setUsername(e.target.value)} placeholder="yourname" pattern="[A-Za-z0-9_.]{3,30}" title="3–30 characters: letters, numbers, underscore or dot" maxLength={30}/><label htmlFor="nova-bio">Bio</label><textarea id="nova-bio" value={bio} onChange={e => setBio(e.target.value)} rows={3} maxLength={500} placeholder="A little about you"/><button className="share-button auth-submit" type="submit" disabled={savingProfile || profileImageBusy}>{profileImageBusy ? "Uploading photo…" : savingProfile ? "Saving…" : "Save profile"}</button></form><button className="auth-switch" onClick={() => void signOut()}>Sign out of NOVA</button></section></div>}
       {authOpen && <div className="auth-backdrop" role="presentation" onClick={() => setAuthOpen(false)}><section className="auth-card card" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={e => e.stopPropagation()}><button className="icon-button auth-close" aria-label="Close" onClick={() => setAuthOpen(false)}><X size={18}/></button><div className="brand auth-brand"><span className="brand-mark">N</span><span>NOVA<span className="brand-dot">.</span></span></div><h2 id="auth-title">{authMode === "signup" ? "Create your account" : "Welcome back"}</h2><p>One account for your NOVA world.</p><form onSubmit={handleAuth}><label htmlFor="nova-email">Email</label><input id="nova-email" type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"/><label htmlFor="nova-password">Password</label><input id="nova-password" type="password" autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={6} required value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters"/><button className="share-button auth-submit" type="submit" disabled={busy}>{busy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"} <LogIn size={16}/></button></form><button className="auth-switch" onClick={() => setAuthMode(authMode === "signup" ? "login" : "signup")}>{authMode === "signup" ? "Already have an account? Sign in" : "New to NOVA? Create an account"}</button></section></div>}
     </main>
   );
