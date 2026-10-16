@@ -120,17 +120,6 @@ export default function HomePage() {
     setOpenComments(current => current.includes(postId) ? current : [...current, postId]);
   }
 
-  async function submitComment(postId: string) {
-    const body = (commentDrafts[postId] ?? "").trim();
-    if (!body) return;
-    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to reply to a post."); return; }
-    const { error } = await supabase.from("comments").insert({ post_id: postId, author_id: user.id, body });
-    if (error) { setNotice(error.message); return; }
-    setCommentDrafts(current => ({ ...current, [postId]: "" }));
-    await loadPosts();
-    setOpenComments(current => current.includes(postId) ? current : [...current, postId]);
-  }
-
   async function toggleLike(postId: string) {
     if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to appreciate posts."); return; }
     const { data: existing, error: readError } = await supabase.from("post_likes").select("post_id").eq("post_id", postId).eq("user_id", user.id).maybeSingle();
