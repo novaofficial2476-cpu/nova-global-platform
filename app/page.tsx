@@ -18,12 +18,29 @@ type Post = {
   created_at: string;
   media_url: string | null;
   media_type: "image" | "video" | null;
+  thumbnail_url?: string | null;
   profiles: { display_name: string; username: string | null } | { display_name: string; username: string | null }[] | null;
 };
 const nav = [
   { label: "Home", icon: Home }, { label: "Explore", icon: Compass }, { label: "Shorts", icon: Film },
   { label: "Messages", icon: MessageCircle }, { label: "Communities", icon: Users }, { label: "Saved", icon: Bookmark },
 ];
+
+async function makeVideoThumbnail(file: File): Promise<Blob | null> {
+  if (!file.type.startsWith("video/")) return null;
+  const video = document.createElement("video");
+  video.muted = true; video.playsInline = true; video.preload = "metadata";
+  const url = URL.createObjectURL(file);
+  try {
+    const frame = await new Promise<Blob | null>((resolve) => {
+      const timeout = window.setTimeout(() => resolve(null), 8000);
+      video.onloadeddata = () => { try { video.currentTime = Math.min(0.5, Math.max(0, video.duration / 10)); } catch { /* seek may be unavailable */ } };
+      video.onseeked = () => { const canvas = document.createElement("canvas"); canvas.width = Math.min(640, video.videoWidth || 640); canvas.height = Math.max(1, Math.round(canvas.width * (video.videoHeight || 360) / (video.videoWidth || 640))); const ctx = canvas.getContext("2d"); if (!ctx) { clearTimeout(timeout); resolve(null); return; } ctx.drawImage(video,0,0,canvas.width,canvas.height); canvas.toBlob(blob => { clearTimeout(timeout); resolve(blob); },"image/webp",0.78); };
+      video.onerror = () => { clearTimeout(timeout); resolve(null); }; video.src = url; video.load();
+    });
+    return frame;
+  } finally { URL.revokeObjectURL(url); video.removeAttribute("src"); video.load(); }
+}
 
 async function compressImageForUpload(file: File): Promise<File> {
   if (!file.type.startsWith("image/") || file.type === "image/gif" || file.size < 700 * 1024) return file;
@@ -229,7 +246,7 @@ export default function HomePage() {
     setLoadingPosts(true);
     const { data, error } = await supabase
       .from("posts")
-      .select("id, author_id, body, created_at, media_url, media_type, moderation_status, profiles!posts_author_id_fkey(display_name, username)")
+      .select("id, author_id, body, created_at, media_url, media_type, thumbnail_url, moderation_status, profiles!posts_author_id_fkey(display_name, username)")
       .eq("visibility", "public")
       .eq("moderation_status", "visible")
       .order("created_at", { ascending: false })
@@ -307,6 +324,7 @@ export default function HomePage() {
     setUploadingMedia(true); setNotice("");
     let media_url: string | null = null;
     let media_type: "image" | "video" | null = null;
+    let thumbnail_url: string | null = null;
     if (selectedMedia) {
       media_type = selectedMedia.type.startsWith("video/") ? "video" : "image";
       let uploadFile = selectedMedia;
@@ -317,8 +335,19 @@ export default function HomePage() {
       const { error: uploadError } = await uploadWithRetry(supabase.storage.from("nova-media"), path, uploadFile);
       if (uploadError) { setUploadingMedia(false); setNotice("Upload failed after 3 attempts: " + (uploadError.message ?? "network error") + ". Your selected file is still available; press Share to retry."); return; }
       media_url = supabase.storage.from("nova-media").getPublicUrl(path).data.publicUrl;
+      if (media_type === "video") {
+        try {
+          const thumb = await makeVideoThumbnail(selectedMedia);
+          if (thumb) {
+            const thumbPath = user.id + "/" + Date.now() + "-thumbnail.webp";
+            const thumbFile = new File([thumb], "thumbnail.webp", { type: "image/webp" });
+            const thumbUpload = await uploadWithRetry(supabase.storage.from("nova-media"), thumbPath, thumbFile);
+            if (!thumbUpload.error) thumbnail_url = supabase.storage.from("nova-media").getPublicUrl(thumbPath).data.publicUrl;
+          }
+        } catch { /* Thumbnail is optional; the video can still be published. */ }
+      }
     }
-    const { error } = await supabase.from("posts").insert({ author_id: user.id, body: composer.trim(), media_url, media_type, visibility: "public" });
+    const { error } = await supabase.from("posts").insert({ author_id: user.id, body: composer.trim(), media_url, media_type, thumbnail_url, visibility: "public" });
     setUploadingMedia(false);
     if (error) { setNotice("Media uploaded but the post could not be saved: " + error.message); return; }
     setComposer(""); setSelectedMedia(null); setMediaPreview(""); if (mediaInputRef.current) mediaInputRef.current.value = "";
@@ -406,7 +435,7 @@ export default function HomePage() {
                 <div className="post-header"><div className="post-avatar avatar-art nova"><Sparkles size={20}/></div><div className="post-author"><strong>{name}</strong><span>{handle} · {time}</span></div><button className="icon-button subtle more" aria-label="Post options" onClick={() => void reportPost(post.id)}><MoreHorizontal size={20}/></button></div>
                 <p className="post-text">{post.body}</p>
                 {post.media_url && post.media_type === "image" && <img className="post-media" src={post.media_url} alt="Photo shared on NOVA" loading="lazy" />}
-                {post.media_url && post.media_type === "video" && <video className={active === "Shorts" ? "post-media short-video" : "post-media"} src={post.media_url} controls playsInline preload="metadata" />}
+                {post.media_url && post.media_type === "video" && <video className={active === "Shorts" ? "post-media short-video" : "post-media"} src={post.media_url} poster={post.thumbnail_url ?? undefined} controls playsInline preload="metadata" />}
                 <div className="post-meta"><span>{post.media_type === "video" ? "NOVA Short" : post.media_type === "image" ? "Photo post" : "Text post"}</span><span>{commentsByPost[post.id]?.length ?? 0} replies</span></div>
                 <div className="post-actions"><button onClick={() => void toggleLike(post.id)}><Heart size={18}/><span>Appreciate</span></button><button onClick={() => setOpenComments(current => current.includes(post.id) ? current.filter(id => id !== post.id) : [...current, post.id])}><MessageCircle size={18}/><span>Reply ({commentsByPost[post.id]?.length ?? 0})</span></button><button onClick={() => {void navigator.clipboard?.writeText(window.location.origin);setNotice("NOVA link copied if your browser permits clipboard access.");}}><Send size={17}/><span>Share</span></button></div>
                 {openComments.includes(post.id) && <div className="comments-panel">
