@@ -27,7 +27,10 @@ export default function HomePage() {
   const [active, setActive] = useState("Home");
   const [query, setQuery] = useState("");
   const [composer, setComposer] = useState("");
-  const [posts, setPosts] = useState<Post[]>([]);\n  const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});\n  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});\n  const [openComments, setOpenComments] = useState<string[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [openComments, setOpenComments] = useState<string[]>([]);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -93,7 +96,18 @@ export default function HomePage() {
     setComposer(""); setNotice("Your post is published."); await loadPosts();
   }
 
-  async function submitComment(postId: string) {\n    const body = (commentDrafts[postId] ?? "").trim();\n    if (!body) return;\n    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to reply to a post."); return; }\n    const { error } = await supabase.from("comments").insert({ post_id: postId, author_id: user.id, body });\n    if (error) { setNotice(error.message); return; }\n    setCommentDrafts(current => ({ ...current, [postId]: "" }));\n    await loadPosts();\n    setOpenComments(current => current.includes(postId) ? current : [...current, postId]);\n  }\n\n  async function toggleLike(postId: string) {
+  async function submitComment(postId: string) {
+    const body = (commentDrafts[postId] ?? "").trim();
+    if (!body) return;
+    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to reply to a post."); return; }
+    const { error } = await supabase.from("comments").insert({ post_id: postId, author_id: user.id, body });
+    if (error) { setNotice(error.message); return; }
+    setCommentDrafts(current => ({ ...current, [postId]: "" }));
+    await loadPosts();
+    setOpenComments(current => current.includes(postId) ? current : [...current, postId]);
+  }
+
+  async function toggleLike(postId: string) {
     if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to appreciate posts."); return; }
     const { data: existing, error: readError } = await supabase.from("post_likes").select("post_id").eq("post_id", postId).eq("user_id", user.id).maybeSingle();
     if (readError) { setNotice(readError.message); return; }
