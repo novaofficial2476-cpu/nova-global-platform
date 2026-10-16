@@ -58,7 +58,20 @@ export default function HomePage() {
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) setNotice("Posts could not be loaded. Check the database policies and site configuration.");
-    else setPosts((data ?? []) as unknown as Post[]);
+    else {
+      setPosts((data ?? []) as unknown as Post[]);
+      const postIds = (data ?? []).map((post: { id: string }) => post.id);
+      if (postIds.length) {
+        const { data: commentData } = await supabase.from("comments")
+          .select("id, post_id, author_id, body, created_at, profiles!comments_author_id_fkey(display_name, username)")
+          .in("post_id", postIds).order("created_at", { ascending: true });
+        const grouped: Record<string, Comment[]> = {};
+        for (const comment of (commentData ?? []) as unknown as Comment[]) {
+          (grouped[comment.post_id] ??= []).push(comment);
+        }
+        setCommentsByPost(grouped);
+      } else setCommentsByPost({});
+    }
     setLoadingPosts(false);
   }
 
@@ -94,6 +107,17 @@ export default function HomePage() {
     const { error } = await supabase.from("posts").insert({ author_id: user.id, body: composer.trim(), visibility: "public" });
     if (error) { setNotice(error.message); return; }
     setComposer(""); setNotice("Your post is published."); await loadPosts();
+  }
+
+  async function submitComment(postId: string) {
+    const body = (commentDrafts[postId] ?? "").trim();
+    if (!body) return;
+    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to reply to a post."); return; }
+    const { error } = await supabase.from("comments").insert({ post_id: postId, author_id: user.id, body });
+    if (error) { setNotice(error.message); return; }
+    setCommentDrafts(current => ({ ...current, [postId]: "" }));
+    await loadPosts();
+    setOpenComments(current => current.includes(postId) ? current : [...current, postId]);
   }
 
   async function submitComment(postId: string) {
@@ -167,6 +191,10 @@ export default function HomePage() {
                 <p className="post-text">{post.body}</p>
                 <div className="post-meta"><span>Saved in NOVA</span><span>Replies coming later</span></div>
                 <div className="post-actions"><button onClick={() => void toggleLike(post.id)}><Heart size={18}/><span>Appreciate</span></button><button onClick={() => setOpenComments(current => current.includes(post.id) ? current.filter(id => id !== post.id) : [...current, post.id])}><MessageCircle size={18}/><span>Reply ({commentsByPost[post.id]?.length ?? 0})</span></button><button onClick={() => {void navigator.clipboard?.writeText(window.location.origin);setNotice("NOVA link copied if your browser permits clipboard access.");}}><Send size={17}/><span>Share</span></button></div>
+                {openComments.includes(post.id) && <div className="comments-panel">
+                  {(commentsByPost[post.id] ?? []).map(comment => { const cp = Array.isArray(comment.profiles) ? comment.profiles[0] : comment.profiles; return <div className="comment-row" key={comment.id}><strong>{cp?.display_name || "NOVA member"}</strong><span>{comment.body}</span></div>; })}
+                  <form className="comment-form" onSubmit={event => { event.preventDefault(); void submitComment(post.id); }}><input value={commentDrafts[post.id] ?? ""} onChange={event => setCommentDrafts(current => ({ ...current, [post.id]: event.target.value }))} placeholder={user ? "Write a reply…" : "Sign in to reply…"} maxLength={2000} /><button className="share-button" type="submit">Reply</button></form>
+                </div>}
               </article>;
             })}
             {!loadingPosts && visiblePosts.length === 0 && <div className="empty-state card"><Search size={24}/><strong>{query ? "No posts found" : "Your feed is ready for its first post"}</strong><span>{query ? "Try another search." : "Sign in and share something with the NOVA community."}</span></div>}
