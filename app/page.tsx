@@ -9,7 +9,8 @@ import {
 import type { User } from "@supabase/supabase-js";
 import { getSupabase } from "../lib/supabase";
 
-type Member = { id: string; display_name: string; username: string | null; bio: string; is_private: boolean };\ntype Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string; profiles: { display_name: string; username: string | null } | { display_name: string; username: string | null }[] | null };
+type Member = { id: string; display_name: string; username: string | null; bio: string; is_private: boolean };
+type Comment = { id: string; post_id: string; author_id: string; body: string; created_at: string; profiles: { display_name: string; username: string | null } | { display_name: string; username: string | null }[] | null };
 type Post = {
   id: string;
   author_id: string;
@@ -30,7 +31,10 @@ export default function HomePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [commentsByPost, setCommentsByPost] = useState<Record<string, Comment[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
-  const [openComments, setOpenComments] = useState<string[]>([]);\n  const [members, setMembers] = useState<Member[]>([]);\n  const [followingIds, setFollowingIds] = useState<string[]>([]);\n  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [openComments, setOpenComments] = useState<string[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [followingIds, setFollowingIds] = useState<string[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState("");
   const [user, setUser] = useState<User | null>(null);
@@ -53,7 +57,25 @@ export default function HomePage() {
     return () => listener.subscription.unsubscribe();
   }, [supabase]);
 
-  async function loadMembers() {\n    if (!supabase) return;\n    setLoadingMembers(true);\n    const { data, error } = await supabase.from("profiles").select("id, display_name, username, bio, is_private").order("created_at", { ascending: false }).limit(40);\n    if (error) setNotice(error.message); else setMembers((data ?? []).filter(member => member.id !== user?.id) as Member[]);\n    if (user) { const { data: follows } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).eq("status", "accepted"); setFollowingIds((follows ?? []).map(item => item.following_id)); }\n    setLoadingMembers(false);\n  }\n\n  async function toggleFollow(memberId: string) {\n    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to follow NOVA members."); return; }\n    const isFollowing = followingIds.includes(memberId);\n    const result = isFollowing ? await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", memberId) : await supabase.from("follows").insert({ follower_id: user.id, following_id: memberId, status: "accepted" });\n    if (result.error) { setNotice(result.error.message); return; }\n    setFollowingIds(current => isFollowing ? current.filter(id => id !== memberId) : [...current, memberId]);\n    setNotice(isFollowing ? "You unfollowed this member." : "You are now following this member.");\n  }\n\n  async function loadProfile(userId: string) {
+  async function loadMembers() {
+    if (!supabase) return;
+    setLoadingMembers(true);
+    const { data, error } = await supabase.from("profiles").select("id, display_name, username, bio, is_private").order("created_at", { ascending: false }).limit(40);
+    if (error) setNotice(error.message); else setMembers((data ?? []).filter(member => member.id !== user?.id) as Member[]);
+    if (user) { const { data: follows } = await supabase.from("follows").select("following_id").eq("follower_id", user.id).eq("status", "accepted"); setFollowingIds((follows ?? []).map(item => item.following_id)); }
+    setLoadingMembers(false);
+  }
+
+  async function toggleFollow(memberId: string) {
+    if (!supabase || !user) { setAuthOpen(true); setNotice("Sign in to follow NOVA members."); return; }
+    const isFollowing = followingIds.includes(memberId);
+    const result = isFollowing ? await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", memberId) : await supabase.from("follows").insert({ follower_id: user.id, following_id: memberId, status: "accepted" });
+    if (result.error) { setNotice(result.error.message); return; }
+    setFollowingIds(current => isFollowing ? current.filter(id => id !== memberId) : [...current, memberId]);
+    setNotice(isFollowing ? "You unfollowed this member." : "You are now following this member.");
+  }
+
+  async function loadProfile(userId: string) {
     if (!supabase) return;
     const { data, error } = await supabase.from("profiles").select("display_name, username, bio").eq("id", userId).maybeSingle();
     if (!error && data) { setDisplayName(data.display_name || "NOVA User"); setUsername(data.username || ""); setBio(data.bio || ""); }
@@ -182,7 +204,8 @@ export default function HomePage() {
         </aside>
         <section className="feed-column">
           <div className="welcome"><div><div className="eyebrow"><Sparkles size={13}/> A NEW KIND OF SOCIAL</div><h1>Make room for <span>you.</span></h1><p>Good things happen when we find our people.</p></div><div className="welcome-orb"><Globe2 size={38}/><span/></div></div>
-          {active === "Explore" && <section className="explore-panel card"><div className="section-heading"><div><span className="live-dot"/> DISCOVER MEMBERS</div><button className="icon-button subtle" aria-label="Refresh members" onClick={() => void loadMembers()}><Settings2 size={17}/></button></div>{loadingMembers ? <p>Loading members…</p> : members.length === 0 ? <p>No public member profiles to show yet.</p> : members.map(member => <div className="member-row" key={member.id}><div className="avatar">{member.display_name.slice(0,1).toUpperCase()}</div><div className="member-info"><strong>{member.display_name}</strong><span>{member.username ? "@"+member.username : "NOVA member"}</span>{member.bio && <small>{member.bio}</small>}</div><button className="outline-button follow-button" onClick={() => void toggleFollow(member.id)}>{followingIds.includes(member.id) ? "Following" : "Follow"}</button></div>)}</section>}\n          <div className="feed-tabs"><button className="tab-selected" onClick={() => {setActive("Home");void loadPosts();}}>Latest <span/></button><button onClick={() => setNotice("Following feed will be added with follow relationships.")}>Following</button><button onClick={() => {setQuery("");void loadPosts();}}>All posts</button></div>
+          {active === "Explore" && <section className="explore-panel card"><div className="section-heading"><div><span className="live-dot"/> DISCOVER MEMBERS</div><button className="icon-button subtle" aria-label="Refresh members" onClick={() => void loadMembers()}><Settings2 size={17}/></button></div>{loadingMembers ? <p>Loading members…</p> : members.length === 0 ? <p>No public member profiles to show yet.</p> : members.map(member => <div className="member-row" key={member.id}><div className="avatar">{member.display_name.slice(0,1).toUpperCase()}</div><div className="member-info"><strong>{member.display_name}</strong><span>{member.username ? "@"+member.username : "NOVA member"}</span>{member.bio && <small>{member.bio}</small>}</div><button className="outline-button follow-button" onClick={() => void toggleFollow(member.id)}>{followingIds.includes(member.id) ? "Following" : "Follow"}</button></div>)}</section>}
+          <div className="feed-tabs"><button className="tab-selected" onClick={() => {setActive("Home");void loadPosts();}}>Latest <span/></button><button onClick={() => setNotice("Following feed will be added with follow relationships.")}>Following</button><button onClick={() => {setQuery("");void loadPosts();}}>All posts</button></div>
           <section className="composer card">
             <div className="avatar composer-avatar">{(displayName || user?.email)?.slice(0,1).toUpperCase() ?? "N"}</div>
             <div className="composer-main"><textarea value={composer} onChange={e => setComposer(e.target.value)} placeholder={user ? "What’s on your mind?" : "Sign in to share with NOVA…"} rows={2} aria-label="Write a post"/><div className="composer-actions"><div className="composer-tools"><button aria-label="Add image" onClick={() => setNotice("Image uploads will be enabled after storage is configured.")}><ImagePlus size={18}/></button><button aria-label="Add video" onClick={() => setNotice("Video uploads are planned for a later phase.")}><Video size={18}/></button><span className="privacy-note"><Globe2 size={13}/> Public</span></div><button className="share-button" onClick={publishPost}><Send size={15}/> Share</button></div></div>
