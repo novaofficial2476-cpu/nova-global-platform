@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "NOVA — One World. Your World.",
   description: "A new home for your stories, communities, and conversations.",
   applicationName: "NOVA",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "NOVA" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
