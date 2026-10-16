@@ -47,3 +47,18 @@
 .profile-file-input{display:block;width:100%;margin:6px 0 14px}.profile-upload-preview{width:84px;height:84px;object-fit:cover;border-radius:50%;margin:6px 0}.cover-upload-preview{display:block;width:100%;max-height:140px;object-fit:cover;border-radius:12px;margin:6px 0}
 
 .message-layout{display:grid;grid-template-columns:minmax(130px, .8fr) minmax(0,1.2fr);gap:12px;margin-top:14px;min-height:220px}.conversation-list,.message-thread{min-width:0;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fcfcff}.conversation-choice{display:flex;flex-direction:column;gap:5px;width:100%;padding:10px;border:0;border-radius:9px;background:transparent;color:var(--ink);text-align:left;overflow-wrap:anywhere}.conversation-choice small{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.conversation-choice.conversation-active{background:#eeeaff;color:var(--purple)}.message-thread{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;align-items:stretch}.message-bubble{align-self:flex-start;max-width:90%;background:#f0f2f8;border-radius:12px;padding:9px 11px;overflow-wrap:anywhere}.message-bubble.message-own{align-self:flex-end;background:#eeeaff}.message-bubble small{display:block;font-size:10px;color:var(--muted);margin-top:5px}.message-thread .comment-form{margin-top:auto}.community-create-form{display:grid;gap:8px;margin-bottom:16px}.community-create-form input,.comment-form input{min-width:0;border:1px solid var(--line);border-radius:10px;padding:11px;background:#fff;color:var(--ink)}@media(max-width:640px){.message-layout{grid-template-columns:1fr}.conversation-list{max-height:170px;overflow:auto}.message-thread{min-height:180px}.message-bubble{max-width:95%}}
+
+/* Legal, privacy controls, moderation and admin surfaces */
+.legal-page{width:min(860px,calc(100% - 32px));margin:32px auto 80px;padding:clamp(18px,4vw,38px);background:var(--surface,#fff);border:1px solid var(--line,#e5e7ef);border-radius:20px;color:var(--ink,#182033);line-height:1.7;overflow-wrap:anywhere}
+.legal-page h1{font-size:clamp(28px,5vw,40px);line-height:1.15;margin:22px 0 12px}
+.legal-page h2{font-size:20px;margin:26px 0 8px}
+.legal-page p{color:var(--muted,#5e6577)}
+.legal-page a{color:var(--purple,#6654d9);text-decoration:underline}
+.legal-page button{border:0;border-radius:10px;padding:11px 16px;background:var(--purple,#6654d9);color:#fff;font-weight:650;cursor:pointer;margin:10px 8px 10px 0}
+.legal-page button:disabled{opacity:.55;cursor:not-allowed}
+.legal-page input{display:block;width:100%;max-width:560px;padding:12px;border:1px solid var(--line,#dfe3ed);border-radius:10px;background:var(--surface,#fff);color:var(--ink,#182033);margin:8px 0 14px}
+.admin-tabs,.admin-actions{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+.admin-report{border:1px solid var(--line,#e5e7ef);border-radius:14px;padding:16px;margin:14px 0;background:var(--surface,#fff)}
+.admin-report pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f6f7fb;padding:10px;border-radius:8px}
+.admin-report code{overflow-wrap:anywhere}
+@media(max-width:640px){.legal-page{width:calc(100% - 18px);margin:9px auto 70px;border-radius:14px;padding:18px}.admin-actions button{flex:1}}
